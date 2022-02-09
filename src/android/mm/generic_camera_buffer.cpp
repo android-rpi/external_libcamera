@@ -10,8 +10,6 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "cros_gralloc_handle.h"
-
 #include <libcamera/base/log.h>
 
 #include "libcamera/internal/formats.h"
@@ -73,8 +71,6 @@ CameraBuffer::Private::Private([[maybe_unused]] CameraBuffer *cameraBuffer,
 		return;
 	}
 
-	auto cros_handle = reinterpret_cast<cros_gralloc_handle_t>(camera3Buffer);
-
 	/*
 	 * As Android doesn't offer an API to query buffer layouts, assume for
 	 * now that the buffer is backed by a single dmabuf, with planes being
@@ -84,7 +80,13 @@ CameraBuffer::Private::Private([[maybe_unused]] CameraBuffer *cameraBuffer,
 		if (camera3Buffer->data[i] == -1 || camera3Buffer->data[i] == fd_)
 			continue;
 
-		fd_ = camera3Buffer->data[0];
+		if (fd_ != -1) {
+			error_ = -EINVAL;
+			LOG(HAL, Error) << "Discontiguous planes are not supported";
+			return;
+		}
+
+		fd_ = camera3Buffer->data[i];
 	}
 
 	if (fd_ == -1) {
@@ -100,24 +102,26 @@ CameraBuffer::Private::Private([[maybe_unused]] CameraBuffer *cameraBuffer,
 		return;
 	}
 
-	const unsigned int numPlanes = cros_handle->num_planes;
+	const unsigned int numPlanes = info.numPlanes();
 	planeInfo_.resize(numPlanes);
 
+	unsigned int offset = 0;
 	for (unsigned int i = 0; i < numPlanes; ++i) {
-		const unsigned int planeSize = cros_handle->sizes[i];
+		const unsigned int planeSize = info.planeSize(size, i);
 
-		planeInfo_[i].stride = cros_handle->strides[i];
-		planeInfo_[i].offset = cros_handle->offsets[i];
-		planeInfo_[i].size = cros_handle->sizes[i];
+		planeInfo_[i].stride = info.stride(size.width, i, 1u);
+		planeInfo_[i].offset = offset;
+		planeInfo_[i].size = planeSize;
 
-		if (bufferLength_ < planeInfo_[i].offset + planeInfo_[i].size) {
+		if (bufferLength_ < offset + planeSize) {
 			LOG(HAL, Error) << "Plane " << i << " is out of buffer:"
-					<< " plane offset=" << planeInfo_[i].offset
-					<< ", plane size=" << planeInfo_[i].size
+					<< " plane offset=" << offset
+					<< ", plane size=" << planeSize
 					<< ", buffer length=" << bufferLength_;
 			return;
 		}
 
+		offset += planeSize;
 	}
 }
 
