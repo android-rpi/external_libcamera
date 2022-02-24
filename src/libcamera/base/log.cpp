@@ -558,7 +558,7 @@ void Logger::parseLogFile()
  */
 void Logger::parseLogLevels()
 {
-	const char *debug = "*:DEBUG";//utils::secure_getenv("LIBCAMERA_LOG_LEVELS");
+	const char *debug = "*:INFO";//utils::secure_getenv("LIBCAMERA_LOG_LEVELS");
 	if (!debug)
 		return;
 
